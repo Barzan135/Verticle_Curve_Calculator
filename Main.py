@@ -20,8 +20,30 @@ Lane_Width = " "
 Divided_Road = False
 Shoulder_Width = " "
 RoadArea = " "
+CurveName = " "
+
+curveslist = []
+cursor.execute("CREATE TABLE IF NOT EXISTS Curves(Name TEXT, SSDReq REAL, SSDAvail REAL, PSDReq REAL, PSDAvail REAL, MaxSpeed REAL, DesignSpeed REAL)")
+
+Data = cursor.execute("SELECT * FROM Curves").fetchall()
+for i in range(0, len(Data)):
+    print(Data)
+    print("Here")
+    curveslist.append(Data[i])
+    print(Data[i])
 
 
+
+ 
+
+def chainage_translation(m):
+     first = int(m//100)
+     second = m % 100
+     return (f'{first}+{second:05.2f}'.replace(".00",""))
+
+def location_translation(m):
+     first, second = m.split("+")
+     return int(first)*100+float(second)
 
 def Error_Message(message):
      error_layout = [
@@ -94,6 +116,9 @@ def OutputWindow(SSDReq, SSDAvail, PSDReq, PSDAvail, MaxSpeed, DesignSpeed):
           SpeedPass = "PASS"
           SpeedColour = "#00dd00"
 
+     ## time for calculations
+     
+
      layout4=[
           [sg.Column([
                [sg.Text("Verticle Curve Results", font=(font, header_size))],
@@ -128,6 +153,9 @@ def OutputWindow(SSDReq, SSDAvail, PSDReq, PSDAvail, MaxSpeed, DesignSpeed):
                Window2()
                break
           if event == "Save Curve":
+               print(CurveName)
+               cursor.execute(f'INSERT INTO Curves VALUES(?,?,?,?,?,?,?)', (CurveName, SSDReq, SSDAvail, PSDReq, PSDAvail, MaxSpeed, DesignSpeed))
+               con.commit()
                print("Attempting save here")
                break
      OutputWindow.Close()
@@ -188,10 +216,11 @@ def Window2():
      global Divided_Road
      global Shoulder_Width
      global RoadArea
-
+     global CurveName
      layout2 =[
           [sg.Column([
                 [sg.Text("Roadway Inputs", font=(font, header_size))],
+                [sg.Text("Curve Name: ", font=(font, text_size), size=(20,1)), sg.Input(f'{CurveName}')],
                 [sg.Text("Number of Lanes: ", font=(font, text_size), size=(20,1)), sg.Input(f'{Num_lanes}')],
                 [sg.Text("Lane Width (m): ", font=(font, text_size), size=(20,1)), sg.Input(f'{Lane_Width}')],
                 [sg.Checkbox("Divided Road?", font=(font, text_size), size=(20,1))],
@@ -211,14 +240,23 @@ def Window2():
                 InputWindow1.Close()
                 break
             if event == "Next":
-                Num_lanes = values[0]
-                Lane_Width = values[1]
-                Divided_Road = values[2]
-                Shoulder_Width = values[3]
-                if values[4] == True and values[5] == True: 
+                print(values)
+                CurveName = values[0]
+                Num_lanes = values[1]
+                Lane_Width = values[2]
+                Divided_Road = values[3]
+                Shoulder_Width = values[4]
+                if values[5] == True and values[6] == True: 
                      Error_Message("You must select only ONE road location.")
-                     break
-                RoadArea = values[4] or values[5]
+                     continue
+                if len(values[0]) <2  or len(values[1]) <2 or len(values[2]) <2  or len(values[4]) <2:
+                     Error_Message("You must fill all curve data")
+                     continue
+                if values[5] == False and values[6] == False:
+                     Error_Message("You must input a valid road location")
+                     continue
+                
+                RoadArea = values[5] or values[6]
                 InputWindow1.Close()
                 Window3()
                 break
@@ -228,16 +266,129 @@ def Window2():
                  break        
     
           
+def Saved_Curves():
+     rows = []
+     for i in curveslist:
+          rows.append([sg.Button(i[0], key=(f'open_{i[0]}'))])
+
+     savelayout = [
+          [sg.Text("Saved Curves", font=(font, header_size))],
+          *rows, 
+          [sg.Button("Back"), sg.Button("Close")]
+      ]
+     StartWindow = sg.Window("CIVIL-3020 Assignment 3", savelayout)
+     while True: 
+            event, values = StartWindow.read() 
+            if event == sg.WIN_CLOSED or event == "Close":
+                StartWindow.close()
+                break
+            elif event == "Back":
+                 Start()
+                 StartWindow.close()
+            elif event.startswith("open_"):
+                 curve_name = event.replace("open_", "")
+                 StartWindow.Close()
+                 OpenSave(curve_name)
+                 print(curve_name)
+                 break
+
+def OpenSave(CurveName):
+     SelectedData = None
+     for i in range(len(Data)):
+          if Data[i][0] == CurveName:
+               SelectedData = Data[i]
+
+     if SelectedData == None:
+          Error_Message("GUI ERROR: No data found for curve!")
+
+
+     ## Find curve data from datastore.
+     SSDReq = SelectedData[1]
+     SSDAvail = SelectedData[2]
+     PSDReq = SelectedData[3]
+     PSDAvail = SelectedData[4]
+     MaxSpeed = SelectedData[5]
+     DesignSpeed = SelectedData[6]
+
+     ## Run as usual
+     SSDPass = "FAIL"
+     SSDColour = "#ff4444"
+
+     PSDPass = "FAIL"
+     PSDColour = "#ff4444"
+
+     SpeedPass = "FAIL"
+     SpeedColour = "#ff4444"
+
+     if SSDReq < SSDAvail:
+          SSDPass = "PASS"
+          SSDColour = "#00dd00"
+     if PSDReq != "n/a":
+          if PSDReq < PSDAvail:
+               PSDPass = "PASS"
+               PSDColour = "#00dd00"
+     else:
+          PSDPass = "N/A"
+          PSDColour = "#00dd00"
+     if DesignSpeed < MaxSpeed:
+          SpeedPass = "PASS"
+          SpeedColour = "#00dd00"
+
+     SaveLayout = [
+          [sg.Text(f'Saved Curve Data: {CurveName}', font=(font, header_size))],
+          [sg.Text(" ")], 
+
+          [sg.Text("Sight Distance Check", font=(font, text_size))],
+          [sg.Text(f'SSD Required: {SSDReq} m', font=(font, text_size))],
+          [sg.Text(f'SSD Available: {SSDAvail} m', font=(font, text_size))],
+          [sg.Text(f'Status: ', font=(font, text_size)), sg.Text(SSDPass, text_color=SSDColour, font=(font, text_size))],
+
+          [sg.Text(" ")], 
+          [sg.Text(f'PSD Required: {PSDReq} m',font=(font, text_size) )],
+          [sg.Text(f'PSD Available: {PSDAvail} m', font=(font, text_size))],
+          [sg.Text(f'Status: ', font=(font, text_size)), sg.Text(PSDPass, text_color=PSDColour, font=(font, text_size))],
+          [sg.Text(" ", font=(font, text_size))], 
+
+          [sg.Text("Maximum Allowable Speed", font=(font, header_size))],
+          [sg.Text(f'Max Safe Speed: {MaxSpeed} km/hr', font=(font, text_size))],
+          [sg.Text(f'Design Speed: {DesignSpeed} km/hr', font=(font, text_size))],
+          [sg.Text(f'Status: ', font=(font, text_size)), sg.Text(SpeedPass, text_color=SpeedColour, font=(font, text_size))],
+
+          [sg.Text(" ", font=(font, text_size))], 
+          [sg.Button("Close", font=(font, text_size)), sg.Button("Delete", font=(font, text_size))]
+     ]
+     SaveDataWindow = sg.Window("CIVIL-3020 Assignment 3", SaveLayout)
+     while True: 
+            event, values = SaveDataWindow.read() 
+            if event == sg.WIN_CLOSED or event == "Close":
+                SaveDataWindow.close()
+                break
+            elif event == "Delete":
+                 print("deleting")
+                 cursor.execute(f'DELETE FROM curves WHERE Name = ?', (CurveName,))
+                 con.commit()
+                 SaveDataWindow.close()
+                 break
+           
+
+
 
 def Start():
-    layout1 = [
+     Num_lanes = " "
+     Lane_Width = " "
+     Divided_Road = False
+     Shoulder_Width = " "
+     RoadArea = " "
+     CurveName = " "
+
+     layout1 = [
         [sg.Column([[sg.Text("Verticle Curve Design Tool", font=(font, header_size))]], justification = "center")],
         [sg.Column([[sg.Button("Create New Curve", size=(button_length,button_height))]], justification = "center")],
         [sg.Column([[sg.Button("View Saved Curves", size=(button_length,button_height))]], justification = "center")],
         [sg.Column([[sg.Button("Close", size=(button_length,button_height))]], justification = "center")],
     ]
-    StartWindow = sg.Window("CIVIL-3020 Assignment 3", layout1)
-    while True: 
+     StartWindow = sg.Window("CIVIL-3020 Assignment 3", layout1)
+     while True: 
             event, values = StartWindow.read() 
             if event == sg.WIN_CLOSED or event == "Close":
                 StartWindow.close()
@@ -247,7 +398,8 @@ def Start():
                 Window2()
                 break
             elif event == "View Saved Curves":
+                 Saved_Curves()
                  StartWindow.close()
+                 break
            
 Start()
-
